@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome!{% endblock %}
+
+
+{% block content %}
+
+    <h2>Welcome to the SVG annotator tool demo</h2>
+    <p>The repository has {{ svgFileNames | length }} SVG files:</p>
+    <ul>
+        {% for fileName in svgFileNames %}
+            <li><a href="/docs/{{ fileName }}">{{ fileName }}</a></li>
+        {% endfor %}
+    </ul>
+
+    <h2>Description</h2>
+    <p>This is a simple <a href="http://flask.pocoo.org/">Flask</a>-based web app that demonstrates using
+        <a href="http://fabricjs.com/">Fabric.js</a> to implement a direct-manipulation SVG annotation tool. For
+        documentation see the project's
+        <a href="https://github.com/matthewcornell/paper-header-annotator-2/blob/master/README.md">README.md</a>, esp. the
+        <a href="https://github.com/matthewcornell/paper-header-annotator-2/blob/master/README.md#documentation">user documentation</a>
+        section. Try it out at <a href="https://annotator-demo.herokuapp.com/">annotator-demo.herokuapp.com</a>.
+    </p>
+    <p>Briefly you can edit the annotation rectangles by creating ("+R") selecting, dragging, resizing, deleting ("-R"
+        or Delete key), and nudging using tab/shift-tab, arrows (shift -> 10px, option -> resize instead of move).
+        Link/unlink two rects of the same type using "+L" and "-L". Number keys 1-3 change the type of the
+        next-to-create rect. Type 'x' to get the selected rect's simulated text.</p>
+
+{% endblock %}
+
+
+{% block scripts %}
+{% endblock %}

@@ -10,7 +10,6 @@ o fileName - name of the svg file being edited
 $(function() {
     // set up edit controls
     $('#revert-button').click(loadAnnotations);
-    $('#save-button').click(saveAnnotations);
 
     $('#add-rect-button').click(addAnnotation);
     $('#delete-rect-button').click(deleteSelection);
@@ -47,8 +46,6 @@ function setLoadingHeader(html) {
  * returning default width and height values (24x24 and 0x0 in Firefox and Chrome respectively). xml loading via
  * http://stackoverflow.com/questions/22822921/how-can-i-get-width-and-height-of-svg-on-image-load-in-ie-11
  * Once loaded, creates the fabric.Canvas for #fabric-canvas and loads the initial annotations.
- *
- * TODO: handle errors - no image or annotations file
  */
 function loadSvg() {
     var uri = fileRepositoryURI + '/' + fileName;
@@ -80,11 +77,9 @@ function loadSvg() {
 function loadAnnotations() {
     // AJAX call to GET annotation JSON
     setLoadingHeader("Loading annotations &OpenCurlyQuote;" + fileName + "&CloseCurlyQuote;...");
-    $.get('/docs/' + fileName + '/annotations',    // TODO cleaner way to get URI
-        function(jsonAnnotListStr) {
+    $.get('/docs/' + fileName + '/annotations',
+        function(annotList) {
             var fabricCanvas = getFabricCanvas();
-            var jsonAnnotListStrRepl = jsonAnnotListStr.replace(/&quot;/g,'"');     // TODO HACK. Play/Jackson issue?
-            var annotList = JSON.parse(jsonAnnotListStrRepl);
             fabricCanvas.clear();
             for(var annotIdx = 0; annotIdx < annotList.length; annotIdx++) {
                 var annot = annotList[annotIdx];
@@ -204,106 +199,6 @@ function removeAnnotationLine(line) {   // twin to addAnnotationLine()
 }
 
 
-<!-- saveAnnotations() -->
-
-/*
- Creates a JSON data structure that is a list of the annotations corresponding to all the fabric objects. Recall
- that some are Rects and some are Lines between rects, but conceptually these are subsumed by the concept of
- 'annotations'. An annotation is a label plus a list of Rects. Also, a single Rect can participate in multiple
- annotations. This means we have to do three passes to group rects into annotation 'objects'. 1) we put each
- Rect into its own annotation (we use an empty {} for 'objects'), then 2) then we iterate over each Line and
- consolidate its two rects into rect1 (arbitrary choice). When we're done, each rect will have an annotation
- 'object' associated with it, with annotation objects shared among linked rects. 3) Finally we 'reverse' the
- structure so that we map annotation objects -> all their rects.
-
- Example: four rects, two links:
- o no links: rect1
- o link1(rect2, rect3)
- o link2(rect2, rect4)
-
- I.e., graphically:
- r1
- r2 --- r3 (link1)
- \-- r4 (link2)
-
- Thus we have two annotations: the list [r1] with label r1Label and the list [r2, r3, r4] with label r234Label
- (labels must always be the same). Processing is like this:
-
- Pass 1: {rect1: annot1, rect2: annot2, rect3: annot3, rect4: annot4}    // where annotN = {}
- Pass 2: {rect1: annot1, rect2: annot2, rect3: annot2, rect4: annot2}
- Pass 3: {annot1: [rect1], annot2: [rect2, rect3, rect4]}
-
- Finally we serialize this into JSON and PUT it to the server.
- */
-function saveAnnotations() {
-    // start by collecting separate Rects and Lines lists
-    var fabricCanvas = getFabricCanvas();
-    var allFabricObjs = fabricCanvas.getObjects();
-    var annotRects = [];
-    var annotLines = [];
-    for(var objIdx = 0; objIdx < allFabricObjs.length; objIdx++) {
-        var fabricObj = allFabricObjs[objIdx];
-        if(isAnnotatedRect(fabricObj)) {
-            annotRects.push(fabricObj);
-        } else {
-            annotLines.push(fabricObj);
-        }
-    }
-
-    // pass 1: create separate annotation objects for each rect
-    var rectToAnnot = new Map();
-    for(var rectIdx = 0; rectIdx < annotRects.length; rectIdx++) {
-        var rect = annotRects[rectIdx];
-        rectToAnnot.set(rect, {});
-    }
-
-    // pass 2: for each Line, merge annotation objects for its two rects
-    for(var lineIdx = 0; lineIdx < annotLines.length; lineIdx++) {
-        var line = annotLines[lineIdx];
-        var rect1 = line.annotRect1;
-        var rect2 = line.annotRect2;
-        rectToAnnot.set(rect2, rectToAnnot.get(rect1));
-    }
-
-    // pass 3: reverse the data structure
-    var annotToRects = new Map();
-    rectToAnnot.forEach(function(annot, rect, m) {
-        if (annotToRects.has(annot)) {
-            annotToRects.get(annot).push(rect);
-        } else {
-            annotToRects.set(annot, [rect]);
-        }
-    });
-
-    // create the JSON data structure to send
-    annotObsToSerialize = [];
-    annotToRects.forEach(function(rects, annot, m) {
-        // first build rectsListToSerialize, saving the last annotLabelType (arbitrary - they should all be the same)
-        var rectsListToSerialize = [];
-        var lastAnnotLabelType = null;
-        rects.forEach(function (rect) {
-            lastAnnotLabelType = rect.annotLabelType;
-            rectsListToSerialize.push({'x': rect.left, 'y': rect.top, 'width': rect.width, 'height': rect.height});
-        });
-        // now add the annotation object itself - a label plus rects list
-        var annotObj = {'label': lastAnnotLabelType, 'rects': rectsListToSerialize};
-        annotObsToSerialize.push(annotObj);
-    });
-
-    // finally, send it
-    $.ajax({
-        url: '/docs/' + fileName,     // TODO cleaner way to get URI, e.g., http://stackoverflow.com/questions/11133059/play-2-x-how-to-make-an-ajax-request-with-a-common-button
-        type: 'PUT',
-        contentType: 'application/json',
-        data: JSON.stringify(annotObsToSerialize),
-        success: function(data) {
-            setLoadingHeader("Loaded file &OpenCurlyQuote;" + fileName + "&CloseCurlyQuote; with "
-                + annotObsToSerialize.length + " annotation(s)");
-        }
-    });
-}
-
-
 <!-- selection-related functions -->
 
 // returns true if fabricObj is a rect with a label. importantly, returns false if fabricObj is a group
@@ -363,20 +258,19 @@ function getLineBetweenRects(rect1, rect2){
 // does two things: 1) make stroke width 0 so that scaling doesn't look terrible. 2) redraw all Lines that this
 // Rect participates in - similar to http://fabricjs.com/stickman/
 function handleObjectMoving(e) {
-    var fabricObj = e.target;           // a Rect. TODO: check for type?
+    var fabricObj = e.target;
     fabricObj.set('strokeWidth', 0);    // for consistent appearance with work-around in handleObjectScaling()
     updateRectEndpoints(fabricObj);
 }
 
 function handleObjectScaling(e) {
-    var fabricObj = e.target;           // a Rect. TODO: check for type?
+    var fabricObj = e.target;
     fabricObj.set('strokeWidth', 0);    // a work-around - Fabric shows a thin gray line that does not get scaled
 //            updateRectEndpoints(fabricObj);   // TODO: commented out because the line endpoint calculation is off - might have to do with 'ugly' below
 }
 
 // since dragging control handes scales instead of resizes, we handle the end of a scaling event by
 // setting the actual size based on size and scale factors
-// TODO: do this only if scaling and not moving? maybe use originalState to decide
 function handleObjectModified(e) {
     var fabricObj = e.target;
     fabricObj.set({'strokeWidth': 2,
@@ -582,8 +476,7 @@ function duplicateSelection() {
     fabricCanvas.setActiveObject(newRect);
 }
 
-// TODO future: let users drag an area on the canvas to create - mouse:down, mouse:move (draw), mouse:up (create).
-// for now, add a rect with fixed position and size
+// add a rect with fixed position and size
 function addAnnotation() {
     var fabricCanvas = getFabricCanvas();
     var newAnnotType = $('#type-select').val();
@@ -601,10 +494,11 @@ function getTextForSelection() {
 
     var rectData =  {'label': activeObj.annotLabelType,
         'x': activeObj.left, 'y': activeObj.top, 'width': activeObj.width, 'height': activeObj.height};
-    $.get('/docs/' + fileName + '/text',       // TODO cleaner way to get URI
+    // AJAX call to GET text
+    $.get('/docs/' + fileName + '/text',
         rectData,
         function(data) {
-            window.alert('text: ' + data);      // TODO show in reasonable way - overlay on current selection, sidebar, etc.
+            window.alert(data);
         }
     );
 }

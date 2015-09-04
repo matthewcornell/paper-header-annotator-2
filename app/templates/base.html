@@ -1,0 +1,34 @@
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}{% endblock %}</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link href="{{ url_for('static', filename='custom.css') }}" rel="stylesheet">
+</head>
+<body>
+
+{% block content %}
+{% endblock %}
+
+
+<hr>
+<footer>
+    <div align="center">Contact: <a href="http://www.matthewcornell.org/contact/">Matthew Cornell</a> |
+        <a href="https://github.com/matthewcornell/paper-header-annotator-2">GitHub repo</a></div>
+</footer>
+
+
+<!-- base scripts -->
+
+<script src="{{ url_for('static', filename='jquery-2.1.4.min.js') }}"></script>
+
+
+<!-- include javascript from child template pages. goes here because we need jquery loaded first, which should be done
+as the last thing in <body> for performance reasons. -->
+
+{% block scripts %}
+{% endblock %}
+
+
+</body>
+</html>
